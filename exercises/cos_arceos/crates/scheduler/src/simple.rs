@@ -1,19 +1,33 @@
+
 use alloc::{collections::VecDeque, sync::Arc};
 use core::ops::Deref;
+use core::sync::atomic::{AtomicIsize, Ordering};
 
 use crate::BaseScheduler;
 
-/// A task wrapper for the [`SimpleScheduler`].
+/// A task wrapper for the [`RRScheduler`].
+///
+/// It add a time slice counter to use in round-robin scheduling.
 pub struct SimpleTask<T> {
     inner: T,
+    time_slice: AtomicIsize,
 }
 
 impl<T> SimpleTask<T> {
-    /// Creates a new [`SimpleTask`] from the inner task struct.
+    /// Creates a new [`RRTask`] from the inner task struct.
     pub const fn new(inner: T) -> Self {
         Self {
             inner,
+            time_slice: AtomicIsize::new(10 as isize),
         }
+    }
+
+    fn time_slice(&self) -> isize {
+        self.time_slice.load(Ordering::Acquire)
+    }
+
+    fn reset_time_slice(&self) {
+        self.time_slice.store(10 as isize, Ordering::Release);
     }
 
     /// Returns a reference to the inner task struct.
@@ -30,20 +44,24 @@ impl<T> Deref for SimpleTask<T> {
     }
 }
 
-/// A simple scheduler.
+/// A simple [Round-Robin] (RR) preemptive scheduler.
 ///
-/// When a task is added to the scheduler, it's placed at the end of the ready
-/// queue. When picking the next task to run, the head of the ready queue is
-/// taken.
+/// It's very similar to the [`FifoScheduler`], but every task has a time slice
+/// counter that is decremented each time a timer tick occurs. When the current
+/// task's time slice counter reaches zero, the task is preempted and needs to
+/// be rescheduled.
 ///
-/// As it's a cooperative scheduler, it does nothing when the timer tick occurs.
+/// Unlike [`FifoScheduler`], it uses [`VecDeque`] as the ready queue. So it may
+/// take O(n) time to remove a task from the ready queue.
 ///
+/// [Round-Robin]: https://en.wikipedia.org/wiki/Round-robin_scheduling
+/// [`FifoScheduler`]: crate::FifoScheduler
 pub struct SimpleScheduler<T> {
     ready_queue: VecDeque<Arc<SimpleTask<T>>>,
 }
 
 impl<T> SimpleScheduler<T> {
-    /// Creates a new empty [`SimpleScheduler`].
+    /// Creates a new empty [`RRScheduler`].
     pub const fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
@@ -61,12 +79,11 @@ impl<T> BaseScheduler for SimpleScheduler<T> {
     fn init(&mut self) {}
 
     fn add_task(&mut self, task: Self::SchedItem) {
-        trace!("######### add_task");
         self.ready_queue.push_back(task);
     }
 
     fn remove_task(&mut self, task: &Self::SchedItem) -> Option<Self::SchedItem> {
-        trace!("######### remove_task");
+        // TODO: more efficient
         self.ready_queue
             .iter()
             .position(|t| Arc::ptr_eq(t, task))
@@ -77,15 +94,22 @@ impl<T> BaseScheduler for SimpleScheduler<T> {
         self.ready_queue.pop_front()
     }
 
-    fn put_prev_task(&mut self, prev: Self::SchedItem, _preempt: bool) {
-        self.ready_queue.push_back(prev);
+    fn put_prev_task(&mut self, prev: Self::SchedItem, preempt: bool) {
+        if prev.time_slice() > 0 && preempt {
+            self.ready_queue.push_front(prev)
+        } else {
+            prev.reset_time_slice();
+            self.ready_queue.push_back(prev)
+        }
     }
 
-    fn task_tick(&mut self, _current: &Self::SchedItem) -> bool {
-        false // no reschedule
+    fn task_tick(&mut self, current: &Self::SchedItem) -> bool {
+        let old_slice = current.time_slice.fetch_sub(1, Ordering::Release);
+        old_slice <= 1
     }
 
     fn set_priority(&mut self, _task: &Self::SchedItem, _prio: isize) -> bool {
         false
     }
 }
+
