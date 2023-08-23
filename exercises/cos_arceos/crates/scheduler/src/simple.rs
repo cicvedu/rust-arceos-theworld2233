@@ -5,16 +5,14 @@ use core::sync::atomic::{AtomicIsize, Ordering};
 
 use crate::BaseScheduler;
 
-/// A task wrapper for the [`RRScheduler`].
-///
-/// It add a time slice counter to use in round-robin scheduling.
+
 pub struct SimpleTask<T> {
     inner: T,
     time_slice: AtomicIsize,
 }
 
 impl<T> SimpleTask<T> {
-    /// Creates a new [`RRTask`] from the inner task struct.
+    
     pub const fn new(inner: T) -> Self {
         Self {
             inner,
@@ -30,7 +28,7 @@ impl<T> SimpleTask<T> {
         self.time_slice.store(10 as isize, Ordering::Release);
     }
 
-    /// Returns a reference to the inner task struct.
+    
     pub const fn inner(&self) -> &T {
         &self.inner
     }
@@ -44,18 +42,7 @@ impl<T> Deref for SimpleTask<T> {
     }
 }
 
-/// A simple [Round-Robin] (RR) preemptive scheduler.
-///
-/// It's very similar to the [`FifoScheduler`], but every task has a time slice
-/// counter that is decremented each time a timer tick occurs. When the current
-/// task's time slice counter reaches zero, the task is preempted and needs to
-/// be rescheduled.
-///
-/// Unlike [`FifoScheduler`], it uses [`VecDeque`] as the ready queue. So it may
-/// take O(n) time to remove a task from the ready queue.
-///
-/// [Round-Robin]: https://en.wikipedia.org/wiki/Round-robin_scheduling
-/// [`FifoScheduler`]: crate::FifoScheduler
+
 pub struct SimpleScheduler<T> {
     ready_queue: VecDeque<Arc<SimpleTask<T>>>,
 }
