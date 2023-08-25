@@ -40,10 +40,10 @@ fn print_file(fname: &str) -> io::Result<()> {
 }
 
 fn process() -> io::Result<()> {
-    create_file("/tmp/f1", "hello")?;
+    create_file("tmp/f1", "hello")?;
     // Just rename, NOT move.
     // So this must happen in the same directory.
-    rename_file("/tmp/f1", "/tmp/f2")?;
+    rename_file("/tmp/f1", "tmp/f2")?;
     print_file("/tmp/f2")
 }
 
